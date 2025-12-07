@@ -27,14 +27,20 @@ function connect() {
     const username = usernameInput.value.trim();
     if (!username) return alert("Enter username");
 
-    const socket = new SockJS("/ws");
+    // Works for localhost and Railway deployed domain
+    const socket = new SockJS(window.location.origin + "/ws");
     stompClient = Stomp.over(socket);
 
     stompClient.connect({}, () => {
         setConnected(true);
 
-        stompClient.send("/app/chat.addUser", {}, JSON.stringify({ sender: username, type: "JOIN" }));
+        // Add user event
+        stompClient.send("/app/chat.addUser", {}, JSON.stringify({
+            sender: username,
+            type: "JOIN"
+        }));
 
+        // Subscribe to public topic
         stompClient.subscribe("/topic/public", (message) => {
             showMessage(JSON.parse(message.body));
         });
@@ -42,7 +48,17 @@ function connect() {
 }
 
 function disconnect() {
-    if (stompClient) stompClient.disconnect();
+    const username = usernameInput.value;
+
+    // Send leave event
+    if (stompClient) {
+        stompClient.send("/app/chat.sendMessage", {}, JSON.stringify({
+            sender: username,
+            type: "LEAVE"
+        }));
+        stompClient.disconnect();
+    }
+
     setConnected(false);
     chatArea.innerHTML = "";
     userList.innerHTML = "";
@@ -65,6 +81,7 @@ function sendMessage() {
 }
 
 function showMessage(msg) {
+    // JOIN message
     if (msg.type === "JOIN") {
         users.add(msg.sender);
         updateUserList();
@@ -72,6 +89,7 @@ function showMessage(msg) {
         return;
     }
 
+    // LEAVE message
     if (msg.type === "LEAVE") {
         users.delete(msg.sender);
         updateUserList();
@@ -79,14 +97,16 @@ function showMessage(msg) {
         return;
     }
 
+    // TYPING message
     if (msg.type === "TYPING") {
         typingDiv.innerHTML = `${msg.sender} is typing...`;
         clearTimeout(typingTimeout);
-        typingTimeout = setTimeout(() => typingDiv.innerHTML = "", 1400);
+        typingTimeout = setTimeout(() => typingDiv.innerHTML = "", 1200);
         return;
     }
 
-    sound.play(); // notification sound
+    // Normal chat message
+    sound.play();
     chatArea.innerHTML += `
         <div class="msg">
             <b>${msg.sender}</b> ${msg.content}
@@ -104,16 +124,21 @@ function updateUserList() {
     });
 }
 
-messageInput.addEventListener("keypress", () => {
+messageInput.addEventListener("input", () => {
+    if (!stompClient) return;
     const username = usernameInput.value;
-    stompClient.send("/app/chat.typing", {}, JSON.stringify({ sender: username, type: "TYPING" }));
+    stompClient.send("/app/chat.typing", {}, JSON.stringify({
+        sender: username,
+        type: "TYPING"
+    }));
 });
 
 connectBtn.addEventListener("click", connect);
 disconnectBtn.addEventListener("click", disconnect);
 sendBtn.addEventListener("click", sendMessage);
-
-messageInput.addEventListener("keypress", (e) => { if (e.key === "Enter") sendMessage(); });
+messageInput.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") sendMessage();
+});
 
 // theme toggle
 themeBtn.addEventListener("click", () => {
